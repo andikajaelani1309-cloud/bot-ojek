@@ -1,45 +1,42 @@
 const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys')
 const pino = require('pino')
-const express = require('express')
-const QRCode = require('qrcode')
+const readline = require('readline')
 
-let qrTerakhir = ''
-const app = express()
-app.get('/', (req,res)=>{
-  if(!qrTerakhir) return res.send('<h1>Tunggu QR muncul... refresh 5 detik lagi</h1>')
-  res.send(`<div style="text-align:center;margin-top:50px"><h2>Scan QR WhatsApp</h2><img src="${qrTerakhir}" style="width:300px;height:300px"/><p>Refresh jika sudah expired</p></div>`)
-})
-const PORT = process.env.PORT || 3000
-app.listen(PORT, ()=>console.log('Web QR jalan di port '+PORT))
+const NOMOR_BOT = '6285175456851' // nomor bot kamu, tanpa +
 
-let sudahBalas = false
-const KATA_KUNCI = ['ojek','ojk','free']
+function tanya(teks){
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+  return new Promise(res => rl.question(teks, ans => { rl.close(); res(ans) }))
+}
 
-async function startBot(){
-  console.log('Bot starting...')
+async function start(){
   const { state, saveCreds } = await useMultiFileAuthState('sesi')
   const { version } = await fetchLatestBaileysVersion()
-  const sock = makeWASocket({ version, logger: pino({level:'silent'}), auth: state, browser:['Ubuntu','Chrome','124.0.0.0'] })
+  const sock = makeWASocket({
+    version,
+    logger: pino({level:'silent'}),
+    auth: state,
+    browser:['Ubuntu','Chrome','124.0.0.0']
+  })
   sock.ev.on('creds.update', saveCreds)
-  sock.ev.on('connection.update', async (u)=>{
-    const { connection, qr } = u
-    if(qr){
-      qrTerakhir = await QRCode.toDataURL(qr)
-      console.log('QR baru tersedia, buka URL service Render kamu untuk scan')
-    }
-    if(connection==='open'){ console.log('Bot CONNECT!'); qrTerakhir='' }
+
+  sock.ev.on('connection.update', (u)=>{
+    if(u.connection==='open') console.log('\nBOT CONNECT! Folder sesi/ sudah jadi.')
+    if(u.connection==='close') console.log('Koneksi tutup, jalankan lagi.')
   })
-  sock.ev.on('messages.upsert', async ({messages})=>{
-    if(sudahBalas) return
-    const msg = messages[0]
-    if(!msg.message || msg.key.fromMe) return
-    const teks = msg.message.conversation || msg.message.extendedTextMessage?.text || ''
-    if(KATA_KUNCI.some(k=>teks.toLowerCase().includes(k))){
-      sudahBalas = true
-      await sock.sendMessage(msg.key.remoteJid, {text:'Kt'}, {quoted:msg})
-      console.log('Sudah dibalas')
-      setTimeout(()=>process.exit(0), 2000)
+
+  if(!sock.authState.creds.registered){
+    console.log('Meminta kode pairing...')
+    await new Promise(r=>setTimeout(r,3000))
+    try{
+      const kode = await sock.requestPairingCode(NOMOR_BOT)
+      console.log('\n================================')
+      console.log('KODE PAIRING KAMU: '+kode)
+      console.log('================================')
+      console.log('Buka WA nomor 6285175456851 > Setelan > Perangkat Tertaut > Tautkan Perangkat > Tautkan dengan nomor telepon > masukkan kode di atas')
+    }catch(e){
+      console.log('Gagal minta kode:', e.message)
     }
-  })
+  }
 }
-startBot()
+start()
