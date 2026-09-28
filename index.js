@@ -42,4 +42,4 @@ async function startBot(){
     }
   })
 }
-startBot()a
+startBot()
